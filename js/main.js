@@ -1,10 +1,7 @@
-/* ============================================================
-   Plus Soluciones — main.js
-   Vanilla JS: navbar, menu, smooth scroll, counters,
-   radio player, fade-in animations
-   ============================================================ */
-
 'use strict';
+
+// ── Check reduced motion preference ────────────────────────
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ── 1. Navbar scroll behavior ─────────────────────────────────
 const navbar = document.getElementById('navbar');
@@ -18,7 +15,7 @@ function handleNavbarScroll() {
 }
 
 window.addEventListener('scroll', handleNavbarScroll, { passive: true });
-handleNavbarScroll(); // run on load
+handleNavbarScroll();
 
 // ── 2. Hamburger / Mobile menu ────────────────────────────────
 const hamburger  = document.getElementById('hamburger');
@@ -30,7 +27,6 @@ hamburger.addEventListener('click', () => {
   hamburger.setAttribute('aria-expanded', isOpen.toString());
 });
 
-// Close menu when a nav link is clicked
 navMenu.querySelectorAll('.nav-link').forEach(link => {
   link.addEventListener('click', () => {
     navMenu.classList.remove('open');
@@ -46,34 +42,79 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     if (!target) return;
     e.preventDefault();
     const offset = parseInt(getComputedStyle(document.documentElement)
-      .getPropertyValue('--nav-height') || '70', 10);
+      .getPropertyValue('--nav-height') || '72', 10);
     const top = target.getBoundingClientRect().top + window.scrollY - offset;
     window.scrollTo({ top, behavior: 'smooth' });
   });
 });
 
-// ── 4. Counter animation ──────────────────────────────────────
+// ── 4. Pricing carousel ───────────────────────────────────────
+const pricingViewport = document.querySelector('.pricing-viewport');
+const pricingSlider = document.querySelector('[data-pricing-slider]');
+const pricingPrev = document.querySelector('[data-slider-prev]');
+const pricingNext = document.querySelector('[data-slider-next]');
+
+function getPricingStep() {
+  const firstCard = pricingSlider?.querySelector('.pricing-card');
+  if (!firstCard || !pricingViewport) return 320;
+  const styles = getComputedStyle(pricingSlider);
+  const gap = parseFloat(styles.columnGap || styles.gap || '16');
+  return firstCard.getBoundingClientRect().width + gap;
+}
+
+function updatePricingButtons() {
+  if (!pricingViewport || !pricingPrev || !pricingNext) return;
+  const maxScroll = pricingViewport.scrollWidth - pricingViewport.clientWidth - 2;
+  pricingPrev.disabled = pricingViewport.scrollLeft <= 2;
+  pricingNext.disabled = pricingViewport.scrollLeft >= maxScroll;
+}
+
+function scrollPricing(direction) {
+  if (!pricingViewport) return;
+  pricingViewport.scrollBy({
+    left: getPricingStep() * direction,
+    behavior: prefersReducedMotion ? 'auto' : 'smooth'
+  });
+}
+
+if (pricingViewport && pricingSlider) {
+  pricingPrev?.addEventListener('click', () => scrollPricing(-1));
+  pricingNext?.addEventListener('click', () => scrollPricing(1));
+  pricingViewport.addEventListener('scroll', updatePricingButtons, { passive: true });
+  window.addEventListener('resize', updatePricingButtons, { passive: true });
+  updatePricingButtons();
+}
+
+// ── 5. Counter animation (with easing) ────────────────────────
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
 function animateCounter(el) {
   const target   = parseFloat(el.dataset.target);
   const suffix   = el.dataset.suffix || '';
-  const duration = 1800; // ms
-  const step     = 16;   // ~60fps
-  const steps    = duration / step;
-  const increment = target / steps;
-  let current = 0;
-
+  const duration = prefersReducedMotion ? 100 : 1800;
+  const start    = performance.now();
   const isDecimal = !Number.isInteger(target);
 
-  const timer = setInterval(() => {
-    current += increment;
-    if (current >= target) {
-      current = target;
-      clearInterval(timer);
-    }
+  function update(now) {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    const easedProgress = easeOutCubic(progress);
+    const current = easedProgress * target;
+
     el.textContent = isDecimal
       ? current.toFixed(1) + suffix
       : Math.floor(current) + suffix;
-  }, step);
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      el.textContent = isDecimal
+        ? target.toFixed(1) + suffix
+        : Math.floor(target) + suffix;
+    }
+  }
+
+  requestAnimationFrame(update);
 }
 
 const statsObserver = new IntersectionObserver((entries) => {
@@ -89,15 +130,16 @@ document.querySelectorAll('.stat-number[data-target]').forEach(el => {
   statsObserver.observe(el);
 });
 
-// ── 5. Fade-in on scroll ──────────────────────────────────────
+// ── 6. Fade-in on scroll ──────────────────────────────────────
 const fadeObserver = new IntersectionObserver((entries) => {
   entries.forEach((entry, i) => {
     if (entry.isIntersecting) {
-      // Stagger siblings in the same parent grid
       const siblings = Array.from(entry.target.parentElement.children)
         .filter(c => c.classList.contains('fade-in'));
       const idx = siblings.indexOf(entry.target);
-      entry.target.style.transitionDelay = `${idx * 80}ms`;
+      if (!prefersReducedMotion) {
+        entry.target.style.transitionDelay = `${idx * 80}ms`;
+      }
       entry.target.classList.add('visible');
       fadeObserver.unobserve(entry.target);
     }
@@ -105,10 +147,11 @@ const fadeObserver = new IntersectionObserver((entries) => {
 }, { threshold: 0.12 });
 
 document.querySelectorAll('.fade-in').forEach(el => {
-  fadeObserver.observe(el);
+  if (prefersReducedMotion) el.classList.add('visible');
+  else fadeObserver.observe(el);
 });
 
-// ── 6. Radio Player ───────────────────────────────────────────
+// ── 7. Radio Player ───────────────────────────────────────────
 const radioSection = document.getElementById('radioPlayer');
 const audioEl      = document.getElementById('radioAudio');
 const playBtn      = document.getElementById('playBtn');
@@ -158,7 +201,6 @@ if (playBtn) {
   });
 }
 
-// Audio events
 if (audioEl) {
   audioEl.addEventListener('playing', () => {
     setStatus('▶ Transmisión en vivo');
@@ -172,7 +214,6 @@ if (audioEl) {
   });
 }
 
-// Volume control
 if (volumeSlider && audioEl) {
   volumeSlider.addEventListener('input', () => {
     audioEl.volume = volumeSlider.value / 100;
@@ -181,7 +222,7 @@ if (volumeSlider && audioEl) {
   volumeSlider.value = 75;
 }
 
-// ── 7. Back-to-top button ─────────────────────────────────────
+// ── 8. Back-to-top button ─────────────────────────────────────
 const backTop = document.getElementById('backTop');
 
 window.addEventListener('scroll', () => {
@@ -196,8 +237,9 @@ if (backTop) {
   });
 }
 
-// ── 8. Particles (hero decorative) ───────────────────────────
+// ── 9. Particles (hero decorative) ───────────────────────────
 (function spawnParticles() {
+  if (prefersReducedMotion) return;
   const container = document.getElementById('heroParticles');
   if (!container) return;
   const count = 18;
@@ -216,3 +258,28 @@ if (backTop) {
     container.appendChild(p);
   }
 })();
+
+// ── 10. Floating WhatsApp ──────────────────────────────────
+const WHATSAPP_NUMBER = '573012151887';
+const DEFAULT_WHATSAPP_MSG = '¡Hola! Me gustaría recibir más información sobre sus servicios. Vengo desde la web plussoluciones.com';
+
+function openWhatsApp(message) {
+  const text = encodeURIComponent(message);
+  window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${text}`, '_blank', 'noopener,noreferrer');
+}
+
+const whatsappBtn = document.getElementById('whatsappBtn');
+
+if (whatsappBtn) {
+  whatsappBtn.addEventListener('click', () => {
+    openWhatsApp(DEFAULT_WHATSAPP_MSG);
+  });
+}
+
+// ── 11. WhatsApp data-attribute links ──────────────────────
+document.querySelectorAll('[data-whatsapp]').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    openWhatsApp(link.dataset.whatsapp);
+  });
+});
